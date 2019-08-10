@@ -7,7 +7,7 @@ Download from https://www.kaggle.com/amirahmed/oslo-scooter-movement-end-of-july
 
 OR 
 
-Run scripts in /scrapers on a regular basis. 
+1. Run scripts in /scrapers on a regular basis. 
 ## Data processing
 Download from https://www.kaggle.com/amirahmed/oslo-scooter-movement-end-of-july-2019
 
