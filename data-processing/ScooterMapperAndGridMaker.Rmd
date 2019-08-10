@@ -15,7 +15,6 @@ names(df) <- c("id", "company", "Latitude", "Longitude", "shortID","perc","time"
 ```{r}
 library(ggmap)
 library(ggplot2)
-ggmap::register_google(key = "AIzaSyDMZdds22hE89Myp4FeoerQM5xargBxXog")
 p <- ggmap(get_googlemap(center = c(lon = 10.757933, lat = 59.911491), zoom = 11, scale = 4, maptype ='terrain',color = 'color')) 
 q <- ggmap(get_googlemap(center = c(lon = 10.757933, lat = 59.911491), zoom = 14, scale = 4, maptype ='terrain',color = 'color')) 
 

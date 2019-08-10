@@ -8,6 +8,7 @@ import requests
 import time
 import csv
 import pandas as pd
+from pathlib import Path
 
 
 # In[58]:
@@ -79,7 +80,8 @@ df = df.drop_duplicates(subset=[0])
 
 # In[71]:
 
+file_path = str(Path().resolve().parent) + "/raw-data/tier_data" + ".csv"
 
-with open("circ_res.csv", 'a+') as f:
+with open(file_path, 'a+') as f:
     df.to_csv(f, header=False)
 

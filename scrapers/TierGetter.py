@@ -7,7 +7,7 @@
 import requests
 import time
 import csv
-
+from pathlib import Path
 
 # In[24]:
 
@@ -18,7 +18,7 @@ r=requests.get("https://platform.tier-services.io/vehicle?zoneId=OSLO", headers=
 # In[30]:
 
 
-file_path = "../raw-data/tier_data" + str(int(time.time())) + ".csv"
+file_path = str(Path().resolve().parent) + "/raw-data/tier_data" + ".csv"
 f = csv.writer(open(file_path, "a+"))
 data = r.json()['data']
 print("Fetched data at time: " + str(time.time()))
