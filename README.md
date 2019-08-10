@@ -3,8 +3,16 @@ Gathering and analyzing electrical scooter movements in Oslo
 
 # How to use
 ## Data collection
-1. Run scripts in /scrapers on a regular basis. 
+Download from https://www.kaggle.com/amirahmed/oslo-scooter-movement-end-of-july-2019
+
+OR 
+
+Run scripts in /scrapers on a regular basis. 
 ## Data processing
+Download from https://www.kaggle.com/amirahmed/oslo-scooter-movement-end-of-july-2019
+
+OR
+
 2. Merge output into one file for easier processing with data-merger.ipynb
 3. Round data to every X minutes with data-merger.ipynb
 4. Calculate distance moved with distance-measure-and-dateparser.ipynb
