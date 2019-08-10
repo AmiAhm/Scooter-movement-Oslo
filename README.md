@@ -1,6 +1,9 @@
 # Scooter-Usage-Oslo
 Gathering and analyzing electrical scooter movements in Oslo
 
+Rendered version of knit can be found here:
+https://amiahm.github.io/Scooter-movement-Oslo/ScooterOverview.html
+
 # How to use
 ## Data collection
 Download from https://www.kaggle.com/amirahmed/oslo-scooter-movement-end-of-july-2019
