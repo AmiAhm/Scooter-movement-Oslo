@@ -1,0 +1,10 @@
+# Compiled source #
+###################
+*.csv
+*.RData
+*.RDataTmp
+
+
+# Folders #
+###########
+/gis

@@ -1,0 +1,274 @@
+---
+title: "Electrical Scooters in Oslo"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+Electrical scooters have taken cities by storm. The scooters are loved by many, but are also the root of controversy. I myself am an avid user of the scooters, they are easy to use and they have saved me quite some time. Most of the scooter companies have easily accsesible APIs where they share the location data of each their scooters. I have collected data for some weeks on scooters in Oslo, and we will now try to get an overview and see what we can reveal about the use of them
+
+An explanation of how to connect to the different APIs can be found in the following github repository. 
+https://github.com/ubahnverleih/WoBike
+
+The Enturs endpoint was also used, and its documentation can be found on the following site. 
+https://developer.entur.org/pages-mobility-docs-scooters 
+
+We first plot a sample of the positions over maps from Kartverket (https://www.kartverket.no/data/) and from openstreetmapdata (https://osmdata.openstreetmap.de/data/land-polygons.html) getting:
+
+## Scooter movements downtown
+<video width="100%" height="auto" autoplay loop muted>
+  <source src="zoomposition.mp4" type="video/mp4">
+</video>
+
+## Scooter movements
+300x300m grid, more purple means higher density of scooters
+<video width="100%" height="auto" autoplay loop muted>
+  <source src="position.mp4" type="video/mp4">
+</video>
+
+## Average scooter power
+300x300m grid, more green means higher average power level in area
+<video width="100%" height="auto" autoplay loop muted>
+  <source src="powerlevels.mp4" type="video/mp4">
+</video>
+
+
+It should be mentioned that the endpoints can be somewhat inconsistent, where for instance (which will be seen later)  Voi's data in the Entur endpoint seem to have stopped logging after Jul 29. 
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+library(ggplot2) # For plotting
+library(plotly) # For interactive plots
+library(dplyr) # For data processing
+
+```
+For Jul 27 data was collected every 30th second, while for all other days data was collected every 10th minute. 
+
+We first study the data on a 10 minute interval..
+
+```{r ImportingData, message=FALSE, warning=FALSE}
+# Reading data
+df <- read.csv("processed-data/output10min.csv")
+
+# Removing index columns
+df <- df[,-c(1,2)]
+
+# Add columns about time stamps
+df$time <- as.POSIXct(df$time, "%Y-%m-%d %H:%M:%S", tz="Europe/Paris")
+df$day <- strftime(df$time, format = "%d")
+df$month <- strftime(df$time, format = "%m")
+df$year <- strftime(df$time, format = "%Y")
+df$hour <- strftime(df$time, format = "%H")
+```
+
+Printing a summary of the data we get the following: 
+```{r Summary, warning=FALSE}
+summary(df)
+```
+We however see that there are a good deal of outliers, i.e. in the `lat`, `lon` variables, and further we see that not all operators log the same, i.e. `Distance`and `ScooterModel`. Are however quite consistetly reported. 
+
+`last_lat`, `last_lon` were added in the data cleaning part and represent observed the position of the scooter in the interval before the selected row. 
+
+We have data on four operators, `circ`, `tier`, `voi` and `zvipp`. With over one million scooter observations for `tier`and `voi`, and a few hunderd thousands scooter observations from `circ` and `zvipp`.
+
+
+So have many scooters are there actually? We plot number of unique scooter ids over time to find out. 
+```{r UniqueScooters, message=FALSE, warning=FALSE}
+# Number of unique scooters per day
+df.unique <- df %>% group_by(operator,time) %>% summarise(n = n_distinct(id))
+p <- ggplot(df.unique, aes(x=time, y = n, color = operator)) +
+  geom_line() +
+  ggtitle("Unique scooter ids in Oslo") + 
+  ylab("Number of unique scooter ids") + 
+  xlab("Time") + 
+  scale_colour_manual(values=c("#F56600","#6DDDb2","#F46C62","#009F1F"))
+ggplotly(p)
+```
+Voi seems to be the largest operator with nearing 2000 unique scooter ids at max while `tier`is the second largest with nearing 1250 unique ids at max. `tier` and `zvipp` seems to close their network around 20:00 and opens around 01:00. `Voi` and `circ` seems to let most scooters be active at all times, having least active ones at 03:00 
+
+We also see that the `Voi`collection stopped around Jul 29. 
+
+## Number of trips
+We first look at scooter movment inbetween position being logged. In the data cleaning step we calculated the distance moved inbetween the time intervals using the Haversine function. This yields measurments as the crow flies (a city is often more complex than that) but it makes for easier calculation. The results are logged in the `distanceTravlled` column. To filter out inactive and inconsistent movement we ignore scooters logged to have moved under 50m and over 15000m.  We should be left with actual movements. An overview is found in the next graph:
+```{r MovementDistance, message=FALSE, warning=FALSE}
+df.trips <- df[df$distanceTravelled > 50 & df$distanceTravelled < 15000,]
+p <- ggplot(df.trips, aes(x = distanceTravelled, fill = operator)) + 
+  geom_histogram(colour='black',size=0.1, breaks = seq(0,15000,500)) + 
+  xlab("Distance travelled") + 
+  ylab("Count") + 
+  ggtitle("Scooter movements count on distance") +
+  scale_fill_manual(values=c("#F56600","#6DDDb2","#F46C62","#009F1F"))
+ggplotly(p)
+
+p <- ggplot(df.trips, aes(x = distanceTravelled, fill = operator)) + 
+  geom_histogram(colour='black',size=0.1, breaks = seq(0,15000,500), position="fill") + 
+  xlab("Distance travelled") + 
+  ylab("Count") + 
+  ggtitle("Scooter movements density on distance") +
+  scale_fill_manual(values=c("#F56600","#6DDDb2","#F46C62","#009F1F"))
+ggplotly(p)
+```
+We see that most movements are under 2500m. Most scooters have a top speed of 20km/h so in ten minutes so it can on max speed travel 2km, so faulty measuring or other types of movement is probably the reason. 
+
+Interestingly we see that eventhough `tier`has close to half the amount of scooters at max, compared to `voi`they are account for a much larger percentage of the movements under 2500m. This is probably due to their lower price, I exclusively use `Tier` they seem to be the cheapest and have a realtively big scooter fleet. 
+
+A scooter can however be used for more than ten minutes, so to estimate a trip we cluster time intervals where movement inbetween each interval on over 50m and less than 3000 substaniate being part of the same trip.
+```{r TripStartEnd, message=FALSE, warning=FALSE}
+# Finding start and end of trips
+df.trip <- df %>% group_by(operator, id) %>% mutate(isEnd = ifelse((lead(distanceTravelled)<50 | lead(distanceTravelled)>3000) & (distanceTravelled > 50 | distanceTravelled > 3000),1,0),
+                                               isStart = ifelse((distanceTravelled < 50 | distanceTravelled > 3000) & (lead(distanceTravelled) > 50 & lead(distanceTravelled) < 3000),1,0)) %>% ungroup()
+
+# Finding intervals part of a trip inbetween strat and end. 
+df.trip <- df.trip %>% group_by(operator, id) %>% mutate(isMid = ifelse((lead(isStart) == 1 | (lead(distanceTravelled)> 50 & lead(distanceTravelled) < 3000)) & (lag(distanceTravelled)> 50 & lag(distanceTravelled) < 3000),1,0)) %>% ungroup()
+```
+
+```{r DailyScootersTrips, message=FALSE, warning=FALSE}
+df.trip$monthDay <- strftime(df$time, format = "%m/%d")
+df.start <- df.trip[df.trip$isStart == 1,]
+df.start <- df.start[!is.na(df.start$time),]
+p <- ggplot(df.start, aes(x = monthDay, fill = operator, colour='black',size=1)) + geom_bar(aes(y=..count..), position='dodge',colour='black',size=0.02) + 
+  xlab("Day") + 
+  ylab("Count") + 
+  ggtitle("Estimated scooter trips per day") + 
+  theme(axis.text.x = element_text(angle = 90))
+  scale_fill_manual(values=c("#F56600","#6DDDb2","#F46C62","#009F1F")) 
+ggplotly(p)
+```
+Here we again see that `tier` and `voi` have close to the same amount of trips eventhough `voi` have a much bigger fleet. 
+
+We note that the data is the most consistent (when considering all operators) for 24/07 to 27/07.
+
+So how many times a day is a scooter on average in use?
+```{r TripsPerScooter1, message=FALSE, warning=FALSE}
+df.start.perScooter <- df.trip[!is.na(df.trip$isStart),]
+df.start.perScooter <- df.start.perScooter %>% 
+  group_by(operator, monthDay) %>%
+  summarise(averageTripsPerScooter = sum(isStart) / length(unique(id))) %>%
+  ungroup()
+
+p <- ggplot(df.start.perScooter, aes(x = monthDay, y = averageTripsPerScooter, fill=operator), colour='black',size=0.02) + 
+  geom_bar(stat="identity", position=position_dodge(), colour='black',size=0.02) +
+  xlab("Day") + 
+  ylab("Average trips per scooter") + 
+  ggtitle("Estimated average trips per scooter") + 
+  theme(axis.text.x = element_text(angle = 90)) +
+  scale_fill_manual(values=c("#F56600","#6DDDb2","#F46C62","#009F1F"))
+
+ggplotly(p)
+
+```
+
+A scooter seems to on average be used four times a day and Tier scooters seems to be used the most. WHile Voi and Circ seem to be used the least.
+
+The results here should be taken with a grain of salt, the scooters might be moved around without it being a trip, for example the scooters are often relocated in the start of a day. (I have never seen this happen, however the scooters tend to be neatly organized in the mornings and I doubt it is the work of scooter riders)
+
+We can further look at the time of day when the scooters are used:
+```{r TripsPerScooter2, message=FALSE, warning=FALSE}
+df.start.perScooter <- df.trip[!is.na(df.trip$isStart),]
+df.start.perScooter <- df.start.perScooter %>% 
+  group_by(operator, hour) %>%
+  summarise(averageTripsPerScooter = sum(isStart) / length(unique(id)) / length(unique(cbind(month, day)))) %>%
+  ungroup()
+
+
+p <- ggplot(df.start.perScooter, aes(x = hour, y = averageTripsPerScooter, fill=operator), colour='black',size=0.02) + 
+  geom_bar(stat="identity", colour='black',size=0.02) +
+  xlab("Hour of day") + 
+  ylab("Average trips per scooter") + 
+  ggtitle("Estimated average trips per scooter (adjusted for days logged)") +
+  theme(axis.text.x = element_text(angle = 90)) +
+  scale_fill_manual(values=c("#F56600","#6DDDb2","#F46C62","#009F1F"))
+ggplotly(p)
+
+```
+Here we see that during the logging period, most scooter activity happend during the afternoon. Some movement, especially in the evenings and mornings, might be due to relocation, charging and other maintanance.
+
+And lastly we can look at their use after the day of the week. 
+```{r TripsPerScooter3, message=FALSE, warning=FALSE}
+df.start.perScooter <- df.trip[!is.na(df.trip$isStart),]
+df.start.perScooter$day <- weekdays(df.start.perScooter$time, abbreviate = T)
+df.start.perScooter <- df.start.perScooter %>% 
+  group_by(operator, day) %>%
+  summarise(averageTripsPerScooter = sum(isStart) / length(unique(id)) / length(unique(cbind(month, day)))) %>%
+  ungroup()
+
+
+p <- ggplot(df.start.perScooter, aes(x = day, y = averageTripsPerScooter, fill=operator), colour='black',size=0.02) + 
+  geom_bar(stat="identity", colour='black',size=0.02,position='dodge') +
+  xlab("Day of week") + 
+  ylab("Average trips per scooter") + 
+  ggtitle("Estimated average trips per scooter (adjusted for days logged)") +
+  theme(axis.text.x = element_text(angle = 90)) +
+  scale_fill_manual(values=c("#F56600","#6DDDb2","#F46C62","#009F1F"))
+ggplotly(p)
+
+```
+Scooters seems to be more used during weekdays than in weekends, it should be noted that the data was logged during a time period where many has summer holiday, and as a result that there are few people that use them to commute to work. 
+
+We can do a similar analysis on average power levels. 
+```{r ScooterPower, message=FALSE, warning=FALSE}
+df.power <- df %>% 
+  group_by(operator, hour) %>%
+  summarise(power = mean(power)) %>%
+  ungroup()
+df.power$hour <- as.numeric(df.power$hour)
+p <- ggplot(df.power, aes(x = hour, y = power, colour=operator)) + 
+  geom_line() +
+  xlab("Hour of day") + 
+  ylab("Average power level") + 
+  ggtitle("Average power level") +
+  theme(axis.text.x = element_text(angle = 90)) +
+  scale_colour_manual(values=c("#F56600","#6DDDb2","#F46C62","#009F1F"))
+ggplotly(p)
+```
+As one would expect power levels seem to drop after a day of use. Seems that Tier has a tendency of charging most of their scooters during night while the others seems to charge more evenly throughout the the day. 
+
+
+
+## Estimating market size
+We can estimate earnings per day for each of the operators.
+```{r MarketSize, message=FALSE, warning=FALSE}
+df.start.perScooter <- df.trip[!is.na(df.trip$isStart),]
+df.start.perScooter <- df.start.perScooter[!is.na(df.start.perScooter$time),]
+df.start.perScooter$monthDay <- strftime(df.start.perScooter$time, format = "%m/%d")
+df.start.perScooter <- df.start.perScooter[df.start.perScooter$isStart == 1,]
+df.start.perScooter$incomePerRide <- 25
+
+df.estimatedIncome <- df.start.perScooter  %>%
+  group_by(operator, year, month, day) %>%
+  summarise(EstimatedIncome = sum(incomePerRide))
+df.estimatedIncome$date <- as.Date(with(df.estimatedIncome, paste(year, month, day,sep="-")),"%Y-%m-%d")
+p <- ggplot(df.estimatedIncome, aes(x = date, y = EstimatedIncome, colour=operator)) + 
+  geom_line() +
+  xlab("Estimated Income") + 
+  ylab("Day") + 
+  ggtitle("Estimated Income 25kr per ride") +
+  theme(axis.text.x = element_text(angle = 90)) +
+  scale_colour_manual(values=c("#F56600","#6DDDb2","#F46C62","#009F1F"))
+ggplotly(p)
+
+```
+This however is not too accurate, if a scooter is moved over 50m for i.e. maintanance this will register as a ride, if every scooter is moved once for non-trip purposes that can fast for operatoers as Voi and Tier amount to errors of up to 50000kr not to mention that 25kr might be a wrong estimate of average income per ride.
+
+## Conclusion 
+We have seen that there are about 3500 scooters in Oslo. Voi seems to have south of 2000 scooters, while Tier seems to have north of 1000 scooters. The scooters seems to be sed 3-6 times a day.Scooters seems to be more in use on weekdays
+
+## Whats next?
+In the future I have planned to do the following work on the dataset
+
+* Add operators as Lime to data collection
+
+* Analyzing rides every 30th second
+
+* Predicting position of scooters in the future using neural networks. 
+
+* Taking other factors such as temperature into account, doing e.g. inference analysis. 
+
+* Study effect of scooter usage on bike and car usage using datasets  as (https://dataut.vegvesen.no/dataset/trafikkmalinger-eksempeldata)
+
+
+
