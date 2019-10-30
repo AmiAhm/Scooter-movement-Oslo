@@ -124,6 +124,25 @@ summary(model)
 
 overdispersionparameter = model$deviance / model$df.residual
 ```
+Simulating:
+```{r}
+df <- df.grid_movment
+df$predicted_rate <- predict.glm(model, df, type="response")
+df$started_rides <- rpois(nrow(df), df$predicted_rate)
+df$scooters_left <- df$n - df$started_rides
+df[df$scooters_left < 0,]$scooters_left = 0
+df$started_rides <- df$n - df$scooters_left
+
+movement_probs <- runif(sum(df$started_rides))
+for(i in 1:nrow(df)){
+  if(df$started_rides > 0){
+    for(j in 1:df[i,]$started_rides)
+
+  }
+}
+```
+
+Predicting outcome:
 
 
 
