@@ -1,6 +1,8 @@
 ---
 title: "Predicting Future Scooter Movement - Poisson Regression"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -16,7 +18,9 @@ We start by fitting a generelized linear model based on the possion family.
 
 ```{r}
 library(dplyr)
-
+library("rgdal")
+library("sf")
+library(ggmap)
 # Reading data
 df <- read.csv("processed-data/output10min.csv")
 
@@ -38,12 +42,74 @@ df.trip <- df %>% group_by(operator, id) %>% mutate(isEnd = ifelse((lead(distanc
 df.trip <- df.trip %>% group_by(operator, id) %>% mutate(isMid = ifelse((lead(isStart) == 1 | (lead(distanceTravelled)> 50 & lead(distanceTravelled) < 3000)) & (lag(distanceTravelled)> 50 & lag(distanceTravelled) < 3000),1,0)) %>% ungroup()
 
 df.trip$monthDay <- strftime(df$time, format = "%m/%d")
+df.trip$weekday <- strftime(df$time, format = "%a")
+
 df.start <- df.trip[df.trip$isStart == 1,]
 df.start <- df.start[!is.na(df.start$time),]
-```
-```{r}
-df.start <- df.start %>% group_by()
+
+df.start <- df.start %>%
+  st_as_sf(coords = c("lon", "lat"), crs = "+proj=longlat +zone=33") %>%
+  st_transform(crs="+proj=utm +zone=33") %>%st_crop(xmin = 254328.471, xmax = 268685.126, ymin = 6646893.804, ymax = 6655335.032)
 ```
 
+
+
+
+Make grid:
+```{r}
+coast <- st_read('gis/shapeFiles/land_polygons.shp')
+coast.c <- st_crop(coast, xmin = 10.54433, xmax = 10.92609, ymin = 59.88134, ymax = 59.98148)
+coast.c <- st_transform(coast.c, CRS("+proj=utm +zone=33 ellps=WGS84"))
+
+
+grid <- st_make_grid(coast.c, cellsize = c(150, 150))
+grid <- st_intersection(coast.c, grid)
+grid$grid_id <- 1:nrow(grid)
+grid <- grid[,c("grid_id","geometry")]
+```
+
+Start rate parameter:
+```{r}
+df.start <- scooters %>% st_join(grid, join = st_intersects) %>% as.data.frame()
+df.start$weekday <- strftime(df.start$time, format = "%a")
+
+df.start_count <- df.start %>% group_by(grid_id, hour, weekday, year, month, day) %>% summarise(started_trips = n())
+df.start_count <- na.omit(df.start_count)
+
+df.days_observed <- df.start %>% group_by(month, day, year) %>% mutate(num = 1:n()) %>% ungroup()
+df.days_observed <- df.days_observed[df.days_observed$num == 1,]
+df.days_observed <- df.days_observed %>% group_by(weekday) %>% summarise(n = n())
+
+for (i in 1:nrow(df.days_observed)){
+  df.start_count[df.start_count$weekday == df.days_observed$weekday[i],]$started_trips <- df.start_count[df.start_count$weekday == df.days_observed$weekday[i],]$started_trips/df.days_observed$n[i]
+}
+```
+
+Where does trips go? 
+```{r}
+df.trip <- df.trip %>%
+  st_as_sf(coords = c("lon", "lat"), crs = "+proj=longlat +zone=33") %>%
+  st_transform(crs="+proj=utm +zone=33") %>%st_crop(xmin = 254328.471, xmax = 268685.126, ymin = 6646893.804, ymax = 6655335.032)
+df.trip <- df.trip %>% st_join(grid, join = st_intersects) %>% as.data.frame()
+
+
+df.start_end <- df.trip[df.trip$isStart == 1 | df.trip$isEnd == 1,]
+df.start_end <- df.start_end[!is.na(df.start_end$time),]
+
+df.start_end <- df.start_end %>% group_by(operator, id) %>% mutate(start_grid = grid_id, end_grid = lead(grid_id))
+df.start_end <- df.start_end[df.start_end$isStart == 1, ]
+df.start_end <- df.start_end %>% group_by(start_grid, end_grid) %>% summarise(n=n()) # if more data can use hour and weekday here
+df.start_end <- na.omit(df.start_end)
+df.start_end <- df.start_end %>% group_by(start_grid) %>% mutate(p = n/n())
+
+## How many scooter in area?
+df.grid_count <- df.trip %>% group_by(grid_id, hour, weekday, day, month, year) %>% summarise(n = n_distinct(id))
+```
+
+Fit glm to estimate 
+```{r}
+model <- glm(started_trips ~ grid_id + hour + weekday, poisson, df.start_count)
+summary(model)
+```
 
 
