@@ -16,19 +16,19 @@ We first plot a sample of the positions over maps from Kartverket (https://www.k
 
 ## Scooter movements downtown
 <video width="100%" height="auto" autoplay loop muted>
-  <source src="zoomposition.mp4" type="video/mp4">
+  <source src="videos/zoomposition.mp4" type="videos/mp4">
 </video>
 
 ## Scooter movements
 300x300m grid, more purple means higher density of scooters
 <video width="100%" height="auto" autoplay loop muted>
-  <source src="position.mp4" type="video/mp4">
+  <source src="videos/position.mp4" type="videos/mp4">
 </video>
 
 ## Average scooter power
 300x300m grid, more green means higher average power level in area
 <video width="100%" height="auto" autoplay loop muted>
-  <source src="powerlevels.mp4" type="video/mp4">
+  <source src="videos/powerlevels.mp4" type="video/mp4">
 </video>
 
 
@@ -124,6 +124,7 @@ df.trip <- df %>% group_by(operator, id) %>% mutate(isEnd = ifelse((lead(distanc
 
 # Finding intervals part of a trip inbetween strat and end. 
 df.trip <- df.trip %>% group_by(operator, id) %>% mutate(isMid = ifelse((lead(isStart) == 1 | (lead(distanceTravelled)> 50 & lead(distanceTravelled) < 3000)) & (lag(distanceTravelled)> 50 & lag(distanceTravelled) < 3000),1,0)) %>% ungroup()
+
 ```
 
 ```{r DailyScootersTrips, message=FALSE, warning=FALSE}

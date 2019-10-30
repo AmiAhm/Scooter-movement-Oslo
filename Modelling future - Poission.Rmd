@@ -1,0 +1,49 @@
+---
+title: "Predicting Future Scooter Movement - Poisson Regression"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introdcution 
+We want to predict and model the position of the scooters position in the future. 
+
+We estimate that the scooter rides starting in a given cell of the grid follows a poission distribution. That is linearly dependent on the cells poistion, the hour of the day and the day of the week. (Later one can add other covariates such as weather, and month)
+
+We start by fitting a generelized linear model based on the possion family.
+
+```{r}
+library(dplyr)
+
+# Reading data
+df <- read.csv("processed-data/output10min.csv")
+
+# Removing index columns
+df <- df[,-c(1,2)]
+
+# Add columns about time stamps
+df$time <- as.POSIXct(df$time, "%Y-%m-%d %H:%M:%S", tz="Europe/Paris")
+df$day <- strftime(df$time, format = "%d")
+df$month <- strftime(df$time, format = "%m")
+df$year <- strftime(df$time, format = "%Y")
+df$hour <- strftime(df$time, format = "%H")
+df.trips <- df[df$distanceTravelled > 50 & df$distanceTravelled < 15000,]
+# Finding start and end of trips
+df.trip <- df %>% group_by(operator, id) %>% mutate(isEnd = ifelse((lead(distanceTravelled)<50 | lead(distanceTravelled)>3000) & (distanceTravelled > 50 | distanceTravelled > 3000),1,0),
+                                               isStart = ifelse((distanceTravelled < 50 | distanceTravelled > 3000) & (lead(distanceTravelled) > 50 & lead(distanceTravelled) < 3000),1,0)) %>% ungroup()
+
+# Finding intervals part of a trip inbetween strat and end. 
+df.trip <- df.trip %>% group_by(operator, id) %>% mutate(isMid = ifelse((lead(isStart) == 1 | (lead(distanceTravelled)> 50 & lead(distanceTravelled) < 3000)) & (lag(distanceTravelled)> 50 & lag(distanceTravelled) < 3000),1,0)) %>% ungroup()
+
+df.trip$monthDay <- strftime(df$time, format = "%m/%d")
+df.start <- df.trip[df.trip$isStart == 1,]
+df.start <- df.start[!is.na(df.start$time),]
+```
+```{r}
+df.start <- df.start %>% group_by()
+```
+
+
+
