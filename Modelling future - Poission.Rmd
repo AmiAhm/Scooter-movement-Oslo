@@ -76,13 +76,6 @@ df.start$weekday <- strftime(df.start$time, format = "%a")
 df.start_count <- df.start %>% group_by(grid_id, hour, weekday, year, month, day) %>% summarise(started_trips = n())
 df.start_count <- na.omit(df.start_count)
 
-df.days_observed <- df.start %>% group_by(month, day, year) %>% mutate(num = 1:n()) %>% ungroup()
-df.days_observed <- df.days_observed[df.days_observed$num == 1,]
-df.days_observed <- df.days_observed %>% group_by(weekday) %>% summarise(n = n())
-
-for (i in 1:nrow(df.days_observed)){
-  df.start_count[df.start_count$weekday == df.days_observed$weekday[i],]$started_trips <- df.start_count[df.start_count$weekday == df.days_observed$weekday[i],]$started_trips/df.days_observed$n[i]
-}
 ```
 
 Where does trips go? 
@@ -104,12 +97,33 @@ df.start_end <- df.start_end %>% group_by(start_grid) %>% mutate(p = n/n())
 
 ## How many scooter in area?
 df.grid_count <- df.trip %>% group_by(grid_id, hour, weekday, day, month, year) %>% summarise(n = n_distinct(id))
+df.grid_count <- na.omit(df.grid_count)
+
+###
+df.grid_movment <- left_join(df.start_count, df.grid_count, by=c("grid_id", "hour", "weekday", "day", "month", "year"))
 ```
 
 Fit glm to estimate 
 ```{r}
-model <- glm(started_trips ~ grid_id + hour + weekday, poisson, df.start_count)
+model <- glm(started_trips ~ grid_id + hour + weekday + n, poisson, df.grid_movment)
 summary(model)
 ```
+
+Overdispersion:
+```{r}
+overdispersionparameter = model$deviance / model$df.residual
+overdispersionparameter
+
+p.overdisp <- pchisq(model$deviance, df=model$df.residual, lower.tail = F)
+p.overdisp
+```
+
+```{r}
+model <- glm(started_trips ~ grid_id + hour + weekday + n, quasipoisson(), df.grid_movment)
+summary(model)
+
+overdispersionparameter = model$deviance / model$df.residual
+```
+
 
 
