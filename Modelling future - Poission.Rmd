@@ -22,17 +22,12 @@ library("rgdal")
 library("sf")
 library(ggmap)
 # Reading data
-df <- read.csv("processed-data/output10min.csv")
+df <- read.csv("processed-data/output10min.csv", nrows = 100000)
 
 # Removing index columns
 df <- df[,-c(1,2)]
-
 # Add columns about time stamps
 df$time <- as.POSIXct(df$time, "%Y-%m-%d %H:%M:%S", tz="Europe/Paris")
-df$day <- strftime(df$time, format = "%d")
-df$month <- strftime(df$time, format = "%m")
-df$year <- strftime(df$time, format = "%Y")
-df$hour <- strftime(df$time, format = "%H")
 df.trips <- df[df$distanceTravelled > 50 & df$distanceTravelled < 15000,]
 # Finding start and end of trips
 df.trip <- df %>% group_by(operator, id) %>% mutate(isEnd = ifelse((lead(distanceTravelled)<50 | lead(distanceTravelled)>3000) & (distanceTravelled > 50 | distanceTravelled > 3000),1,0),
@@ -44,15 +39,13 @@ df.trip <- df.trip %>% group_by(operator, id) %>% mutate(isMid = ifelse((lead(is
 df.trip$monthDay <- strftime(df$time, format = "%m/%d")
 df.trip$weekday <- strftime(df$time, format = "%a")
 
-df.start <- df.trip[df.trip$isStart == 1,]
-df.start <- df.start[!is.na(df.start$time),]
-
-df.start <- df.start %>%
+df.trip <- df.trip %>%
   st_as_sf(coords = c("lon", "lat"), crs = "+proj=longlat +zone=33") %>%
   st_transform(crs="+proj=utm +zone=33") %>%st_crop(xmin = 254328.471, xmax = 268685.126, ymin = 6646893.804, ymax = 6655335.032)
+
+df.start <- df.trip[df.trip$isStart == 1,]
+df.start <- df.start[!is.na(df.start$time),]
 ```
-
-
 
 
 Make grid:
@@ -70,7 +63,7 @@ grid <- grid[,c("grid_id","geometry")]
 
 Start rate parameter:
 ```{r}
-df.start <- scooters %>% st_join(grid, join = st_intersects) %>% as.data.frame()
+df.start <- df.start  %>% st_join(grid, join = st_intersects) %>% as.data.frame()
 df.start$weekday <- strftime(df.start$time, format = "%a")
 
 df.start_count <- df.start %>% group_by(grid_id, hour, weekday, year, month, day) %>% summarise(started_trips = n())
@@ -80,9 +73,6 @@ df.start_count <- na.omit(df.start_count)
 
 Where does trips go? 
 ```{r}
-df.trip <- df.trip %>%
-  st_as_sf(coords = c("lon", "lat"), crs = "+proj=longlat +zone=33") %>%
-  st_transform(crs="+proj=utm +zone=33") %>%st_crop(xmin = 254328.471, xmax = 268685.126, ymin = 6646893.804, ymax = 6655335.032)
 df.trip <- df.trip %>% st_join(grid, join = st_intersects) %>% as.data.frame()
 
 
@@ -94,6 +84,7 @@ df.start_end <- df.start_end[df.start_end$isStart == 1, ]
 df.start_end <- df.start_end %>% group_by(start_grid, end_grid) %>% summarise(n=n()) # if more data can use hour and weekday here
 df.start_end <- na.omit(df.start_end)
 df.start_end <- df.start_end %>% group_by(start_grid) %>% mutate(p = n/n())
+
 
 ## How many scooter in area?
 df.grid_count <- df.trip %>% group_by(grid_id, hour, weekday, day, month, year) %>% summarise(n = n_distinct(id))
@@ -133,15 +124,29 @@ df$scooters_left <- df$n - df$started_rides
 df[df$scooters_left < 0,]$scooters_left = 0
 df$started_rides <- df$n - df$scooters_left
 
-movement_probs <- runif(sum(df$started_rides))
+i = 10
+j = 1
+
+count = 1
+movement_probs <- runif(sum(df$started_rides), max = 1.2)
+grids <- unique(df$grid_id)
 for(i in 1:nrow(df)){
   if(df$started_rides > 0){
-    for(j in 1:df[i,]$started_rides)
-
+    for(j in 1:df[i,]$started_rides){
+      from_grid = df[i,]$grid_id
+      move_prob <- movement_probs[count]
+      count = count + 1
+      
+      if(move_prob > 1){
+        end_grid = sample(grids, 1)
+      }
+      to_grid =  
+    }
   }
 }
-```
 
+
+```
 Predicting outcome:
 
 
