@@ -21,23 +21,31 @@ library(dplyr)
 library("rgdal")
 library("sf")
 library(ggmap)
+library(lubridate)
+
 # Reading data
-df <- read.csv("processed-data/output10min.csv", nrows = 100000)
+df <- read.csv("processed-data/output10min.csv")
 
 # Removing index columns
 df <- df[,-c(1,2)]
 # Add columns about time stamps
 df$time <- as.POSIXct(df$time, "%Y-%m-%d %H:%M:%S", tz="Europe/Paris")
-df.trips <- df[df$distanceTravelled > 50 & df$distanceTravelled < 15000,]
+
 # Finding start and end of trips
 df.trip <- df %>% group_by(operator, id) %>% mutate(isEnd = ifelse((lead(distanceTravelled)<50 | lead(distanceTravelled)>3000) & (distanceTravelled > 50 | distanceTravelled > 3000),1,0),
                                                isStart = ifelse((distanceTravelled < 50 | distanceTravelled > 3000) & (lead(distanceTravelled) > 50 & lead(distanceTravelled) < 3000),1,0)) %>% ungroup()
 
-# Finding intervals part of a trip inbetween strat and end. 
+# Finding intervals part of a trip inbetween start and end. 
 df.trip <- df.trip %>% group_by(operator, id) %>% mutate(isMid = ifelse((lead(isStart) == 1 | (lead(distanceTravelled)> 50 & lead(distanceTravelled) < 3000)) & (lag(distanceTravelled)> 50 & lag(distanceTravelled) < 3000),1,0)) %>% ungroup()
 
-df.trip$monthDay <- strftime(df$time, format = "%m/%d")
-df.trip$weekday <- strftime(df$time, format = "%a")
+df.trip$monthDay <- strftime(df.trip$time, format = "%m/%d")
+df.trip$weekday <- strftime(df.trip$time, format = "%a")
+df.trip$hour <- strftime(df.trip$time, format = "%H")
+df.trip$month <- strftime(df.trip$time, format = "%m")
+df.trip$year <- strftime(df.trip$time, format = "%Y")
+df.trip$day <- strftime(df.trip$time, format = "%d")
+df.trip$min <- strftime(df.trip$time, format = "%M")
+
 
 df.trip <- df.trip %>%
   st_as_sf(coords = c("lon", "lat"), crs = "+proj=longlat +zone=33") %>%
@@ -54,11 +62,14 @@ coast <- st_read('gis/shapeFiles/land_polygons.shp')
 coast.c <- st_crop(coast, xmin = 10.54433, xmax = 10.92609, ymin = 59.88134, ymax = 59.98148)
 coast.c <- st_transform(coast.c, CRS("+proj=utm +zone=33 ellps=WGS84"))
 
-
-grid <- st_make_grid(coast.c, cellsize = c(150, 150))
+grid_cell_size = c(300, 300) # In meters
+grid <- st_make_grid(coast.c, cellsize = grid_cell_size)
 grid <- st_intersection(coast.c, grid)
 grid$grid_id <- 1:nrow(grid)
 grid <- grid[,c("grid_id","geometry")]
+grid %>%
+  write_sf("predict_grid_300.shp")
+
 ```
 
 Start rate parameter:
@@ -75,7 +86,7 @@ Where does trips go?
 ```{r}
 df.trip <- df.trip %>% st_join(grid, join = st_intersects) %>% as.data.frame()
 
-
+## Where does the trips go?
 df.start_end <- df.trip[df.trip$isStart == 1 | df.trip$isEnd == 1,]
 df.start_end <- df.start_end[!is.na(df.start_end$time),]
 
@@ -84,19 +95,59 @@ df.start_end <- df.start_end[df.start_end$isStart == 1, ]
 df.start_end <- df.start_end %>% group_by(start_grid, end_grid) %>% summarise(n=n()) # if more data can use hour and weekday here
 df.start_end <- na.omit(df.start_end)
 df.start_end <- df.start_end %>% group_by(start_grid) %>% mutate(p = n/n())
+df.start_end<- df.start_end[seq(dim(df.start_end)[1],1),] # Reverse order
 
 
-## How many scooter in area?
-df.grid_count <- df.trip %>% group_by(grid_id, hour, weekday, day, month, year) %>% summarise(n = n_distinct(id))
+## How many scooter in area at the start of an hour
+df.grid_count <- df.trip[df.trip$min < 10,]
+df.grid_count <- df.trip %>% group_by(grid_id, hour, weekday, day, month, year) %>% summarise(number_scooters_at_hr_start = n_distinct(id))
 df.grid_count <- na.omit(df.grid_count)
 
 ###
 df.grid_movment <- left_join(df.start_count, df.grid_count, by=c("grid_id", "hour", "weekday", "day", "month", "year"))
+
+df.grid_movment$time <- as.POSIXct(paste(df.grid_movment$year, df.grid_movment$month, df.grid_movment$day, df.grid_movment$hour), "%Y %m %d %H", tz="Europe/Paris")
+df.grid_movment$predicted <- 0
+
+max_time <- max(df.grid_movment$time)
+start_year = strftime(max_time, format = "%Y")
+start_hr = strftime(max_time, format = "%H")
+start_day = strftime(max_time, format = "%d")
+start_month = strftime(max_time, format = "%m")
+
+df.predict_from = df.grid_movment[df.grid_movment$hour == start_hr &
+                                    df.grid_movment$year == start_year &
+                                    df.grid_movment$day == start_day &
+                                    df.grid_movment$month == start_month,]
+#grid_ids <- 1:nrow(grid)
+#grid_ids_to_add <- as.data.frame(grid_ids[!grid_ids %in% df.predict_from$grid_id])
+#names(grid_ids_to_add) <- c("grid_id")
+#grid_ids_to_add$time <- max_time
+#grid_ids_to_add$weekday <- strftime(grid_ids_to_add$time, format = "%a")
+#grid_ids_to_add$hour <- strftime(grid_ids_to_add$time, format = "%H")
+#grid_ids_to_add$month <- strftime(grid_ids_to_add$time, format = "%m")
+#grid_ids_to_add$year <- strftime(grid_ids_to_add$time, format = "%Y")
+#grid_ids_to_add$day <- strftime(grid_ids_to_add$time, format = "%d")
+#grid_ids_to_add$number_scooters_at_hr_start <- 0 
+#grid_ids_to_add$predicted <- 0
+#grid_ids_to_add <- grid_ids_to_add[, c("grid_id", "weekday", "hour", "year", "month", "day", "time", #"number_scooters_at_hr_start", "predicted")] 
+#grid_ids_to_add$started_trips <- 0
+#df.grid_movment <- bind_rows(df.grid_movment, grid_ids_to_add)
+
+df.grid_movment$grid_id <- as.factor(df.grid_movment$grid_id)
+
+```
+Test and train data:
+```{r}
+max_time <- max(df.grid_movment$time)
+train.max_time <- max_time - 60*60*20 # 12 hr
+df.train <- df.grid_movment[df.grid_movment$time < train.max_time, ]
+df.test <- df.grid_movment[df.grid_movment$time >= train.max_time, ]
 ```
 
 Fit glm to estimate 
 ```{r}
-model <- glm(started_trips ~ grid_id + hour + weekday + n, poisson, df.grid_movment)
+model <- glm(started_trips ~ grid_id + hour + weekday + number_scooters_at_hr_start, poisson, df.train)
 summary(model)
 ```
 
@@ -110,44 +161,137 @@ p.overdisp
 ```
 
 ```{r}
-model <- glm(started_trips ~ grid_id + hour + weekday + n, quasipoisson(), df.grid_movment)
+model <- glm(started_trips ~ grid_id + hour + weekday + number_scooters_at_hr_start, quasipoisson(), df.train)
 summary(model)
 
 overdispersionparameter = model$deviance / model$df.residual
 ```
 Simulating:
 ```{r}
-df <- df.grid_movment
-df$predicted_rate <- predict.glm(model, df, type="response")
-df$started_rides <- rpois(nrow(df), df$predicted_rate)
-df$scooters_left <- df$n - df$started_rides
-df[df$scooters_left < 0,]$scooters_left = 0
-df$started_rides <- df$n - df$scooters_left
+predict_movement <- function(df, hours_into_future){
+  df$predicted_rate <- predict.glm(model, df, type="response")*hours_into_future 
+  df$started_rides <- rpois(nrow(df), df$predicted_rate) 
+  df <- na.omit(df)
+  
+  movement_probs <- runif(sum(df$started_rides), max = 1.2)
+  grids <- unique(df.grid_movment$grid_id)
+  count <- 0
+  
+  df_new <- as.data.frame(unique(df.grid_movment$grid_id), colnames = c("grid_id"))
+  names(df_new) <- c("grid_id")
+  df_new$time <- df$time[1]+ hours_into_future*60*60
+  df_new$weekday <- strftime(df_new$time, format = "%a")
+  df_new$hour <- strftime(df_new$time, format = "%H")
+  df_new$month <- strftime(df_new$time, format = "%m")
+  df_new$year <- strftime(df_new$time, format = "%Y")
+  df_new$day <- strftime(df_new$time, format = "%d")
+  df_new <- left_join(df_new, df[,c("grid_id", "number_scooters_at_hr_start","started_rides")], by=c("grid_id"))
+  df_new[is.na(df_new)] <- 0
+  df_new$scooters_left <- df_new$number_scooters_at_hr_start - df_new$started_rides
+  df_new[df_new$scooters_left < 0, ]$scooters_left <- 0 
+  df_new$started_rides <- df_new$number_scooters_at_hr_start - df_new$scooters_left
+  df_new$scooters_arrived <- 0 
 
-i = 10
-j = 1
-
-count = 1
-movement_probs <- runif(sum(df$started_rides), max = 1.2)
-grids <- unique(df$grid_id)
-for(i in 1:nrow(df)){
-  if(df$started_rides > 0){
-    for(j in 1:df[i,]$started_rides){
-      from_grid = df[i,]$grid_id
-      move_prob <- movement_probs[count]
-      count = count + 1
-      
-      if(move_prob > 1){
-        end_grid = sample(grids, 1)
+  for(i in 1:nrow(df_new)){
+    print(i)
+    if(df_new$started_rides[i] > 0){
+      for(j in 1:df_new[i,]$started_rides){
+        count <- count + 1
+        from_grid = df[i,]$grid_id
+        move_prob <- movement_probs[j]
+        
+        end_grid <- NA
+        if(move_prob < 1){
+          end_grid = df.start_end[df.start_end$start_grid == from_grid & df.start_end$p >= move_prob, ]$end_grid[1]
+        }
+        
+        if(is.na(end_grid)){
+          end_grid = sample(grids, 1)
+        }
+        
+        df_new[df_new$grid_id == end_grid,]$scooters_arrived = df_new[df_new$grid_id == end_grid,]$scooters_arrived + 1
+           
       }
-      to_grid =  
     }
+    
   }
+  
+  df_new$number_scooters_at_hr_start <- df_new$scooters_left + df_new$scooters_arrived
+
+  df_new$predicted <- 1
+  df_new <- df_new[, c("grid_id", "hour", "weekday", "year", "month", "day", "time", "number_scooters_at_hr_start", "predicted")]
+  
+  return(df_new)
 }
 
 
+add_predicted_data <- function(df, n, time_step_hr){
+  for(i in 1:n){
+    print(i)
+    max_time <- max(df$time)
+    start_year = strftime(max_time, format = "%Y")
+    start_hr = strftime(max_time, format = "%H")
+    start_day = strftime(max_time, format = "%d")
+    start_month = strftime(max_time, format = "%m")
+    
+    df.predict_from = df[df$hour == start_hr &
+                                        df$year == start_year &
+                                        df$day == start_day &
+                                        df$month == start_month,]
+    
+
+    new_data = predict_movement(df.predict_from, time_step_hr)
+    new_data <- na.omit(new_data)
+    
+    df = bind_rows(df, new_data)
+    print(nrow(new_data))
+    df <- na.omit(df)
+   
+  }
+  return(df)
+
+}
+
+df.train <- df.train[,-c(7)]
+df.train$predicted <- 0
+df.train <- df.train[, c("grid_id", "hour", "weekday", "year", "month", "day", "time", "number_scooters_at_hr_start", "predicted")]
+res <- c()
+for(k in 1:100){
+  print(k)
+  df.result = add_predicted_data(df.train, 1, 1)
+  df.result <-df.result[df.result$predicted == 1, ] 
+  df.result <- na.omit(df.result)
+  df.result <- full_join(df.test, df.result, by=c("grid_id","hour", "year", "month", "day"))
+  df.result <- na.omit(df.result)
+  df.result[is.na(df.result)] <- 0
+  df.result$err <- df.result$number_scooters_at_hr_start.x - df.result$number_scooters_at_hr_start.y
+  mse_1hr = mean((df.result$err)^2)**0.5
+  res <- c(res, mse_1hr)
+}
+
+#Write results
+#df.result$grid_id <- as.integer(df.result$grid_id)
+#df.predict_output <- df.result %>% left_join(grid, by=c("grid_id"))
+#write.csv(df.predict_output, "predicted.csv")
+
+## Baseline same as day before
+df.baseline <- df.train 
+df.baseline$time <- df.baseline$time + 24*60*60
+df.baseline$monthDay <- strftime(df.baseline$time, format = "%m/%d")
+df.baseline$weekday <- strftime(df.baseline$time, format = "%a")
+df.baseline$hour <- strftime(df.baseline$time, format = "%H")
+df.baseline$month <- strftime(df.baseline$time, format = "%m")
+df.baseline$year <- strftime(df.baseline$time, format = "%Y")
+df.baseline$day <- strftime(df.baseline$time, format = "%d")
+df.baseline$min <- strftime(df.baseline$time, format = "%M")
+df.baseline <- left_join(df.test, df.baseline, by=c("grid_id","hour", "year", "month", "day"))
+df.baseline <- na.omit(df.baseline)
+df.baseline$err <- df.baseline$number_scooters_at_hr_start.x - df.baseline$number_scooters_at_hr_start.y
+mse = mean((df.baseline$err)^2)**0.5
+
+
+
 ```
-Predicting outcome:
 
 
 
