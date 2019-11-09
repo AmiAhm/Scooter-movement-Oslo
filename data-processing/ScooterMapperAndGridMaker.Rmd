@@ -7,62 +7,14 @@ editor_options:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-
-df <- read.csv("scooter_info.csv", header = F)
-names(df) <- c("id", "company", "Latitude", "Longitude", "shortID","perc","time")
 ```
 
 ```{r}
 library(ggmap)
 library(ggplot2)
-p <- ggmap(get_googlemap(center = c(lon = 10.757933, lat = 59.911491), zoom = 11, scale = 4, maptype ='terrain',color = 'color')) 
-q <- ggmap(get_googlemap(center = c(lon = 10.757933, lat = 59.911491), zoom = 14, scale = 4, maptype ='terrain',color = 'color')) 
-
-
-
-p +  geom_point(aes(x = Longitude, y = Latitude, color = company), data = df, alpha=0.25, size = 0.5) 
-```
-
-```{r}
-q + stat_density2d(
-    aes(x = Longitude, y = Latitude, fill = ..level.., alpha = 0.25),
-    size = 0.01, bins = 30, data = df,
-    geom = "polygon"
-  ) 
-```
-
-```{r}
-#https://download.bbbike.org/osm/bbbike/Oslo/
 library("rgdal")
 library("sf")
-shp <- readOGR("NO_Fylker_pol.shp")
-plot(shp)
 
-oslo <- st_read('Tettsted2018.shp')
-oslo <- oslo[oslo$Tettstedsn == "Oslo",]
-oslo <- oslo[,c("Tettstedsn", "geometry")]
-oslo <- st_transform(oslo, CRS("+proj=utm +zone=33 ellps=WGS84"))
-oslo.c <- st_crop(oslo, xmin = 254328.471, xmax = 268685.126, ymin = 6646893.804, ymax = 6655335.032)
-
-#https://osmdata.openstreetmap.de/data/land-polygons.html
-coast <- st_read('land_polygons.shp')
-coast.c <- st_crop(coast, xmin = 10.54433, xmax = 10.92609, ymin = 59.88134, ymax = 59.98148)
-coast.c <- st_transform(coast.c, CRS("+proj=utm +zone=33 ellps=WGS84"))
-
-roads <- st_read('gis_osm_roads_free_1.shp')
-roads <- st_crop(roads, xmin = 10.54433, xmax = 10.92609, ymin = 59.88134, ymax = 59.98148)
-
-water <- st_read('gis_osm_water_a_free_1.shp')
-water <- st_crop(water, xmin = 10.54433, xmax = 10.92609, ymin = 59.88134, ymax = 59.98148)
-
-
-
-grid_300 <- st_make_grid(coast.c, cellsize = c(300, 300))
-grid_300 <- st_intersection(coast.c, grid_300)
-grid_300$grid_id <- 1:nrow(grid_300)
-grid_300 <- grid_300[,c("grid_id","geometry")]
-
-library(ggplot2)
 
 t <- theme(axis.title.x=element_blank(),
         axis.text.x=element_blank(),
@@ -74,58 +26,64 @@ t <- theme(axis.title.x=element_blank(),
         plot.margin = margin(2,.8,2,.8, "cm"),
         text = element_text(family = "Calibri Light", size = 8))
 
+```
 
-library(sf)
-library(ggplot)
+
+```{r}
+coast <- st_read('../gis/shapeFiles/land_polygons.shp')
+coast.c <- st_crop(coast, xmin = 10.54433, xmax = 10.92609, ymin = 59.88134, ymax = 59.98148)
+coast.c <- st_transform(coast.c, CRS("+proj=utm +zone=33 ellps=WGS84"))
+
+
+grid_150 <- st_make_grid(coast.c, cellsize = c(150, 150))
+grid_150 <- st_intersection(coast.c, grid_150)
+grid_150$grid_id <- 1:nrow(grid_150)
+grid_150 <- grid_150[,c("grid_id","geometry")]
+
+grid_300 <- st_make_grid(coast.c, cellsize = c(300, 300))
+grid_300 <- st_intersection(coast.c, grid_300)
+grid_300$grid_id <- 1:nrow(grid_300)
+grid_300 <- grid_300[,c("grid_id","geometry")]
 
 plot <- ggplot() + 
   geom_sf(data = coast.c) + 
-  geom_sf(data = roads) + 
+  geom_sf(data = grid_300) + 
   theme_bw() +
   coord_sf(crs = "+proj=longlat +zone=33", xlim = c(10.54433, 10.92609), ylim = c(59.88134, 59.98148), expand = FALSE, datum = NA) +
   t
 plot
 
-library(shiny)
-g <- plot(plot)
-
-ggsave("test1.png", plot, width =24.4 , height = 13.7, dpi=500, units="cm")
 ```
 
 ```{r}
-df <- read.csv("scooter_parsed.csv")
-names(df) <- c("index", "id", "operator", "lat", "lon", "id2", "power", "time")
+# Reading data
+df <- read.csv("../processed-data/output10min.csv")
+
+# Filtering data
 df <- df[df$lat > 58,]
 df <- df[df$lat < 61,]
 df <- df[df$lon < 11,]
 df <- df[df$lon > 10.6,]
 
 
-
 scooters <- df %>%
   st_as_sf(coords = c("lon", "lat"), crs = "+proj=longlat +zone=33") %>%
   st_transform(crs="+proj=utm +zone=33") %>%st_crop(xmin = 254328.471, xmax = 268685.126, ymin = 6646893.804, ymax = 6655335.032)
 
-
-df2 <- scooters %>% st_join(grid_300, join = st_intersects) %>% as.data.frame
+# Place in grid
+df2 <- scooters %>% st_join(grid_300, join = st_intersects) %>% as.data.frame()
 
 # Counting amount of scooters in cell
 library(dplyr)
-densities <- df2 %>% group_by(grid_id, time) %>% summarise(n = mean(power))
+densities <- df2 %>% group_by(grid_id, time, operator) %>% summarise(n = n())
 #densities$n <- densities$n / max(densities$n)
-grid300.densities <- inner_join(densities, grid_300, by = "grid_id")
+grid150.densities <- inner_join(densities, grid_150, by = "grid_id")
 rbPal <- colorRampPalette(c('#3A617F', '#2E2D94','#B309B7'))
 cols <- rbPal(50)[grid300.densities$n]
 cols[is.na(cols)] <- "#B309B7"
 
-#library(extrafont)
-#font_import()
-loadfonts(device = "win")
 
-
-loadfonts(device = "win")
-
-
+#########
 ggplot() +
   geom_sf(data = coast.c, inherit.aes = FALSE) + 
   geom_sf(data = scooters, size = 0.25) +
@@ -143,8 +101,8 @@ center = c(lon = 10.757933, lat = 59.911491)
 
 map = get_map(center, zoom = 12, source = "stamen", maptype = "toner")
 
-grid300.densities %>%
-  write_sf("grid300_power.shp")
+grid_150 %>%
+  write_sf("grid150.shp")
 
 scooters %>%
   write_sf("scooters.shp")
@@ -153,5 +111,27 @@ coast.c %>%
   write_sf("coastc.shp")
 
 ```
+
+```{r}
+library(dplyr)
+df2 <- df2 %>% group_by(operator, id) %>% mutate(isEnd = ifelse((lead(distanceTravelled)<50 | lead(distanceTravelled)>3000) & (distanceTravelled > 50 | distanceTravelled > 3000),1,0),
+                                               isStart = ifelse((distanceTravelled < 50 | distanceTravelled > 3000) & (lead(distanceTravelled) > 50 & lead(distanceTravelled) < 3000),1,0)) %>% ungroup()
+
+# Finding intervals part of a trip inbetween strat and end. 
+df2 <- df2 %>% group_by(operator, id) %>% mutate(isMid = ifelse((lead(isStart) == 1 | (lead(distanceTravelled)> 50 & lead(distanceTravelled) < 3000)) & (lag(distanceTravelled)> 50 & lag(distanceTravelled) < 3000),1,0)) %>% ungroup()
+
+df.trips <- df2[df2$isEnd == 1 | df2$isStart == 1,]
+
+df.trips <- df.trips %>% group_by(operator, id) %>% mutate(last_grid_id = lag(grid_id),last_time= lag(time))
+
+df.trips <- df.trips[!is.na(df.trips$id),]
+
+write.csv(df.trips, "grid_movement.csv")
+```
+
+```{r}
+df.trips <- read.csv("grid_movement.csv")
+```
+
 
 

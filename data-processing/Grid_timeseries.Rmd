@@ -1,0 +1,34 @@
+---
+title: "Grid timeseries"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+df <- read.csv("grid_movement_300.csv")
+df <- df[,-c(1)]
+df <- df[df$operator == "tier",]
+df$time <- as.POSIXct(df$time, tz="Europe/Paris", format="%Y-%m-%d %H:%M:%S")
+
+
+library(ggplot2)
+ggplot(df, aes(x=time, y = n, color = grid_id)) + geom_line()
+
+library(tidyr)
+df <- df %>% spread(grid_id, n)
+
+df[is.na(df)]<- 0 
+
+library(xts)
+df.times <- xts(df[,-c(2)])
+
+
+```
+
+
+
